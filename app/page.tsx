@@ -1,65 +1,128 @@
-import Image from "next/image";
+'use client';
+
+import { useEffect, useState } from 'react';
+
+// Criamos uma interface para que o TypeScript conheça as propriedades da licitação
+interface Licitacao {
+  numeroControlePNCP: string;
+  objetoCompra: string;
+  orgaoEntidade: {
+    razaoSocial: string;
+  };
+  unidadeOrgao: {
+    municipioNome: string;
+    ufSigla: string;
+  };
+  dataEncerramentoProposta: string;
+  modalidadeNome: string;
+  valorTotalEstimado: number;
+}
 
 export default function Home() {
+  const [licitacoes, setLicitacoes] = useState<Licitacao[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Função assíncrona para buscar os dados do nosso BFF interno
+    async function buscarDados() {
+      try {
+        setCarregando(true);
+        const resposta = await fetch('/api/licitacoes');
+        
+        if (!resposta.ok) {
+          throw new Error('Falha ao obter dados da API local');
+        }
+
+        const resultado = await resposta.json();
+        // Guardamos o array filtrado dentro do nosso estado do React
+        setLicitacoes(resultado.licitacoes || []);
+      } catch (err: any) {
+        setErro(err.message || 'Erro inesperado');
+      } finally {
+        setCarregando(false);
+      }
+    }
+
+    buscarDados();
+  }, []);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="min-h-screen bg-gray-50 p-6 md:p-12 text-gray-900">
+      <div className="max-w-6xl mx-auto">
+        
+        {/* Cabeçalho do Painel */}
+        <header className="mb-8 border-b border-gray-200 pb-6">
+          <h1 className="text-3xl font-bold text-blue-700 tracking-tight">
+            Monitor de Licitações Públicas
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-2 text-gray-600">
+            Monitoramento em tempo real de oportunidades focadas em Água e Gás.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+        </header>
+
+        {/* Estado de Carregamento (Feedback Visual) */}
+        {carregando && (
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span className="ml-3 text-gray-600">Buscando novas oportunidades no PNCP...</span>
+          </div>
+        )}
+
+        {/* Estado de Erro */}
+        {erro && (
+          <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded mb-6">
+            <p className="text-red-700 font-medium">Ops! Algo deu errado: {erro}</p>
+          </div>
+        )}
+
+        {/* Lista de Resultados */}
+        {!carregando && !erro && (
+          <div>
+            {licitacoes.length === 0 ? (
+              <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200 text-center text-gray-500">
+                Nenhuma nova licitação de água ou gás foi publicada na região hoje.
+              </div>
+            ) : (
+              <div className="grid gap-6">
+                {licitacoes.map((licitacao) => (
+                  <div 
+                    key={licitacao.numeroControlePNCP} 
+                    className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 hover:border-blue-300 transition-colors"
+                  >
+                    <div className="flex flex-wrap justify-between items-start gap-2 mb-3">
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700">
+                        {licitacao.modalidadeNome}
+                      </span>
+                      <span className="text-sm font-medium text-amber-600">
+                        Prazo Limite: {new Date(licitacao.dataEncerramentoProposta).toLocaleString('pt-BR')}
+                      </span>
+                    </div>
+
+                    <h2 className="text-lg font-bold text-gray-800 mb-2">
+                      {licitacao.orgaoEntidade.razaoSocial}
+                    </h2>
+
+                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+                      {licitacao.objetoCompra}
+                    </p>
+
+                    <div className="flex flex-wrap items-center justify-between pt-4 border-t border-gray-100 text-xs text-gray-500">
+                      <div>
+                        📍 Local: <strong className="text-gray-700">{licitacao.unidadeOrgao.municipioNome} - {licitacao.unidadeOrgao.ufSigla}</strong>
+                      </div>
+                      <div className="mt-2 sm:mt-0 font-semibold text-gray-700">
+                        Valor Estimado: {licitacao.valorTotalEstimado ? `R$ ${licitacao.valorTotalEstimado.toLocaleString('pt-BR')}` : 'Não informado'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+      </div>
+    </main>
   );
 }
