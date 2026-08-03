@@ -1,0 +1,200 @@
+// ============================================================================
+// PRISMA SCHEMA - MONITOREI LICITAÇÕES (MULTI-TENANT SAAS)
+// PostgreSQL Database Provider
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// ENUMS
+// ----------------------------------------------------------------------------
+
+enum UserRole {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  OPERADOR
+}
+
+enum MatchStatus {
+  NOVA
+  EM_ANALISE
+  SALVA
+  DESCARTADA
+}
+
+enum WorkerStatus {
+  SUCESSO
+  FALHA
+  PARCIAL
+}
+
+// ----------------------------------------------------------------------------
+// MULTI-TENANT & USUÁRIOS
+// ----------------------------------------------------------------------------
+
+model Tenant {
+  id               String             @id @default(uuid())
+  nome             String
+  cnpj             String             @unique @db.VarChar(14)
+  ativo            Boolean            @default(true)
+  criadoEm         DateTime           @default(now()) @map("criado_em")
+  atualizadoEm     DateTime           @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  users            User[]
+  termosInteresse  TermoInteresse[]
+  termosExclusao   TermoExclusao[]
+  licitacaoMatches LicitacaoMatch[]
+  auditLogs        AuditLog[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String     @id @default(uuid())
+  tenantId     String     @map("tenant_id")
+  nome         String
+  email        String     @unique
+  senhaHash    String     @map("senha_hash")
+  role         UserRole   @default(OPERADOR)
+  ativo        Boolean    @default(true)
+  criadoEm     DateTime   @default(now()) @map("criado_em")
+  atualizadoEm DateTime   @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  auditLogs    AuditLog[]
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+// ----------------------------------------------------------------------------
+// CONFIGURAÇÕES DE INTERESSE & FILTROS POR TENANT
+// ----------------------------------------------------------------------------
+
+model TermoInteresse {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  termo        String   // Ex: "água mineral", "gás GLP"
+  ufs          String[] @default([]) // Ex: ["SP", "RJ"], vazio = todas UFs
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, termo])
+  @@map("termos_interesse")
+}
+
+model TermoExclusao {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  termo        String   // Ex: "manutenção", "medicinal", "locação"
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @map("criado_em")
+  atualizadoEm DateTime @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, termo])
+  @@map("termos_exclusao")
+}
+
+// ----------------------------------------------------------------------------
+// LICITAÇÕES & MATCHES POR TENANT
+// ----------------------------------------------------------------------------
+
+model Licitacao {
+  id                      String           @id @default(uuid())
+  numeroControlePNCP      String           @unique @map("numero_controle_pncp")
+  orgaoRazaoSocial        String           @map("orgao_razao_social")
+  orgaoCnpj               String           @map("orgao_cnpj") @db.VarChar(14)
+  uf                      String           @db.VarChar(2)
+  municipio               String
+  modalidadeNome          String           @map("modalidade_nome")
+  objetoCompra            String           @map("objeto_compra") @db.Text
+  valorTotalEstimado      Decimal?         @map("valor_total_estimado") @db.Decimal(15, 2)
+  dataPublicacaoPncp     DateTime         @map("data_publicacao_pncp")
+  dataAberturaProposta    DateTime?        @map("data_abertura_proposta")
+  dataEncerramentoProposta DateTime?       @map("data_encerramento_proposta")
+  linkSistemaOrigem       String?          @map("link_sistema_origem")
+  rawPayload              Json?            @map("raw_payload")
+  criadoEm                DateTime         @default(now()) @map("criado_em")
+  atualizadoEm            DateTime         @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  matches                 LicitacaoMatch[]
+
+  @@index([uf, dataPublicacaoPncp])
+  @@index([dataEncerramentoProposta])
+  @@map("licitacoes")
+}
+
+model LicitacaoMatch {
+  id                   String      @id @default(uuid())
+  tenantId             String      @map("tenant_id")
+  licitacaoId          String      @map("licitacao_id")
+  status               MatchStatus @default(NOVA)
+  termosCorrespondentes String[]    @map("termos_correspondentes")
+  anotacoes            String?     @db.Text
+  criadoEm             DateTime    @default(now()) @map("criado_em")
+  atualizadoEm         DateTime    @updatedAt @map("atualizado_em")
+
+  // Relacionamentos
+  tenant               Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  licitacao            Licitacao   @relation(fields: [licitacaoId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, licitacaoId])
+  @@index([tenantId, status])
+  @@map("licitacoes_matches")
+}
+
+// ----------------------------------------------------------------------------
+// LGPD AUDITORIA & OBSERVABILIDADE DO WORKER
+// ----------------------------------------------------------------------------
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  tenantId     String?  @map("tenant_id")
+  userId       String?  @map("user_id")
+  acao         String   // LOGIN_SUCCESS, UPDATE_CONFIG, EXPORT_DATA, RIGHT_TO_BE_FORGOTTEN
+  recurso      String   // Endpoint ou módulo afetado
+  ip           String?  @db.VarChar(45)
+  userAgent    String?  @map("user_agent")
+  detalhes     Json?
+  criadoEm     DateTime @default(now()) @map("criado_em")
+
+  // Relacionamentos
+  tenant       Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, criadoEm])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+model WorkerLog {
+  id              String       @id @default(uuid())
+  executadoEm     DateTime     @default(now()) @map("executado_em")
+  duracaoMs       Int          @map("duracao_ms")
+  status          WorkerStatus
+  totalColetado   Int          @map("total_coletado")
+  novasLicitacoes Int          @map("novas_licitacoes")
+  novosMatches    Int          @map("novos_matches")
+  erro            String?      @db.Text
+  detalhes        Json?
+
+  @@index([executadoEm])
+  @@map("worker_logs")
+}

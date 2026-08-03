@@ -1,0 +1,3 @@
+module.exports=[77930,a=>{"use strict";var b=a.i(7997);a.s(["default",0,function({children:a}){return(0,b.jsx)("html",{lang:"pt-BR",className:"dark",children:(0,b.jsx)("body",{className:"bg-slate-950 text-slate-100 antialiased min-h-screen",children:a})})},"metadata",0,{title:"Monitorei - SaaS Multi-tenant de Licitações Públicas",description:"Monitoramento automatizado de licitações públicas com inteligência de match e isolamento seguro por inquilino."}])},34005,a=>{a.n(a.i(77930))}];
+
+//# sourceMappingURL=apps_web_src_app_layout_tsx_1yx9ufn._.js.map

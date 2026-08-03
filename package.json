@@ -1,26 +1,32 @@
 {
   "name": "monitor-licitacoes",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "dev:api": "npm run dev --workspace=@monitor-licitacoes/api",
+    "dev:web": "npm run dev --workspace=@monitor-licitacoes/web",
+    "build:api": "npm run build --workspace=@monitor-licitacoes/api",
+    "build:web": "npm run build --workspace=@monitor-licitacoes/web",
+    "db:push": "npx prisma db push",
+    "db:seed": "npx prisma db seed",
+    "db:studio": "npx prisma studio"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
-    "next": "16.2.10",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "@prisma/client": "^5.10.0",
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.10",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.19.43",
+    "prisma": "^5.10.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.5",
+    "typescript": "^5.3.3"
   }
 }
