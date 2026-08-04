@@ -9,6 +9,7 @@ export interface LicitacaoDTO {
     municipioNome: string;
   };
   modalidadeNome: string;
+  tipoDocumento?: string; // 'edital' | 'ata' | 'contrato'
   objetoCompra: string;
   valorTotalEstimado?: number;
   dataPublicacaoPncp: string;
@@ -19,5 +20,5 @@ export interface LicitacaoDTO {
 
 export interface ILicitacaoProvider {
   readonly nome: string;
-  buscarEditais(termo: string, uf?: string, status?: string): Promise<LicitacaoDTO[]>;
+  buscarEditais(termo: string, uf?: string, status?: string, tipoDocumento?: string): Promise<LicitacaoDTO[]>;
 }

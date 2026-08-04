@@ -41,6 +41,7 @@ export interface Licitacao {
   uf: string;
   municipio: string;
   modalidadeNome: string;
+  tipoDocumento?: string;
   objetoCompra: string;
   valorTotalEstimado?: number;
   dataPublicacaoPncp: string;

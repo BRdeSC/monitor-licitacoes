@@ -11,7 +11,7 @@ export class MatchEngine {
    * 1. Carrega todos os termos de interesse cadastrados pelos tenants ativos
    * 2. Consulta os provedores (ex: PNCP Search API) buscando editais ativos e histórico
    * 3. Salva/Atualiza deduplicado na tabela `Licitacao`
-   * 4. Aplica cruzamento de regras (Termos Positivos vs Termos Negativos de Exclusão) por Tenant
+   * 4. Aplica cruzamento ESTRITO de regras (Termos Positivos vs Termos Negativos de Exclusão) por Tenant
    * 5. Grava logs de observabilidade em `WorkerLog`
    */
   static async executarIngestaoEMatch(
@@ -45,18 +45,29 @@ export class MatchEngine {
         });
       }
 
-      // Se nenhum termo estiver cadastrado, utiliza acervo de busca padrão
+      // Regra de Isolamento: Se nenhum termo ativo estiver cadastrado, CANCELA a ingestão!
       if (termosParaBuscar.size === 0) {
-        ['água', 'gás', 'material', 'serviços', 'professor', 'equipamento'].forEach((t) => termosParaBuscar.add(t));
+        console.log(`⚠️ [MatchEngine] Nenhum termo de interesse ativo cadastrado nos tenants. Ingestão pausada.`);
+        await prisma.workerLog.create({
+          data: {
+            duracaoMs: Date.now() - inicio,
+            status: WorkerStatus.SUCESSO,
+            totalColetado: 0,
+            novasLicitacoes: 0,
+            novosMatches: 0,
+            erro: 'Nenhum termo ativo cadastrado nos tenants.',
+          },
+        });
+        return;
       }
 
       const listaTermos = Array.from(termosParaBuscar);
-      console.log(`🚀 [MatchEngine] Iniciando ingestão com ${providers.map((p) => p.nome).join(', ')} para os termos: ${listaTermos.join(', ')}`);
+      console.log(`🚀 [MatchEngine] Iniciando ingestão estrita para os termos: ${listaTermos.join(', ')}`);
 
       let todasContratacoes: LicitacaoDTO[] = [];
       const statusList = ['recebendo_proposta', 'encerradas'];
 
-      // 2. Itera por cada Provedor e Termo de Interesse
+      // 2. Itera por cada Provedor e Termo de Interesse dos Tenants
       for (const provider of providers) {
         for (const termo of listaTermos) {
           for (const st of statusList) {
@@ -72,7 +83,7 @@ export class MatchEngine {
       }
 
       totalColetado = todasContratacoes.length;
-      console.log(`🏢 [MatchEngine] Processando cruzamento para ${tenantsAtivos.length} tenants ativos sobre ${totalColetado} editais coletados...`);
+      console.log(`🏢 [MatchEngine] Processando cruzamento estrito para ${tenantsAtivos.length} tenants sobre ${totalColetado} editais coletados...`);
 
       // 3. Processa cada licitação deduplicando no PostgreSQL
       for (const item of todasContratacoes) {
@@ -90,6 +101,7 @@ export class MatchEngine {
             uf: item.unidadeOrgao.ufSigla,
             municipio: item.unidadeOrgao.municipioNome,
             modalidadeNome: item.modalidadeNome,
+            tipoDocumento: item.tipoDocumento || 'edital',
             objetoCompra: item.objetoCompra,
             valorTotalEstimado: item.valorTotalEstimado,
             dataPublicacaoPncp: new Date(item.dataPublicacaoPncp),
@@ -102,12 +114,12 @@ export class MatchEngine {
 
         novasLicitacoes++;
 
-        // 4. Checagem de Match para cada Tenant
+        // 4. Cruzamento Estrito de Match por Tenant
         const objetoMinusculo = licitacaoSalva.objetoCompra.toLowerCase();
         const ufLicitacao = licitacaoSalva.uf.toUpperCase();
 
         for (const tenant of tenantsAtivos) {
-          // Rule A: Se contiver qualquer Termo de Exclusão do tenant, DESCONSIDERA!
+          // Rule A: Termos de Exclusão do Tenant
           const temExclusao = tenant.termosExclusao.some((excluso: { termo: string }) =>
             objetoMinusculo.includes(excluso.termo.toLowerCase())
           );
@@ -116,7 +128,7 @@ export class MatchEngine {
             continue;
           }
 
-          // Rule B: Encontra termos positivos de interesse que batem com o objeto
+          // Rule B: Termos Positivos de Interesse ATIVOS do Tenant
           const termosMatch = tenant.termosInteresse.filter((interesse: { ufs: string[]; termo: string }) => {
             if (interesse.ufs.length > 0 && !interesse.ufs.includes(ufLicitacao)) {
               return false;

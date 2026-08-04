@@ -123,6 +123,7 @@ model Licitacao {
   uf                      String           @db.VarChar(2)
   municipio               String
   modalidadeNome          String           @map("modalidade_nome")
+  tipoDocumento           String           @default("edital") @map("tipo_documento")
   objetoCompra            String           @map("objeto_compra") @db.Text
   valorTotalEstimado      Decimal?         @map("valor_total_estimado") @db.Decimal(15, 2)
   dataPublicacaoPncp     DateTime         @map("data_publicacao_pncp")

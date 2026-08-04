@@ -1,24 +1,34 @@
 'use client';
 
-import React, { useState } from 'react';
-import { LicitacaoMatch, MatchStatus } from '../../lib/types';
-import { CountdownTimer } from './CountdownTimer';
-import { Building2, MapPin, Tag, ExternalLink, DollarSign, XCircle, Bookmark, Eye, ChevronDown, ChevronUp, Calendar } from 'lucide-react';
+import React from 'react';
+import {
+  Building2,
+  MapPin,
+  Calendar,
+  ChevronRight,
+} from 'lucide-react';
+import Link from 'next/link';
 
 interface LicitacaoCardProps {
-  match: LicitacaoMatch;
-  onAtualizarStatus: (id: string, novoStatus: MatchStatus) => void;
+  item: {
+    id: string;
+    numeroControlePNCP: string;
+    numeroSequencial?: string;
+    ano?: string;
+    orgaoRazaoSocial: string;
+    orgaoCnpj?: string;
+    uf: string;
+    municipio: string;
+    modalidadeNome: string;
+    tipoDocumento?: string;
+    objetoCompra: string;
+    valorTotalEstimado?: number;
+    dataPublicacaoPncp?: string;
+    dataEncerramentoProposta?: string | null;
+  };
 }
 
-export function LicitacaoCard({ match, onAtualizarStatus }: LicitacaoCardProps) {
-  const { licitacao, status, termosCorrespondentes } = match;
-  const [expandido, setExpandido] = useState(false);
-
-  const formatarMoeda = (valor?: number) => {
-    if (!valor) return 'Sob Consulta';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
-  };
-
+export function LicitacaoCard({ item }: LicitacaoCardProps) {
   const formatarData = (dataIso?: string | null) => {
     if (!dataIso) return 'Não informada';
     return new Date(dataIso).toLocaleDateString('pt-BR', {
@@ -28,133 +38,81 @@ export function LicitacaoCard({ match, onAtualizarStatus }: LicitacaoCardProps) 
     });
   };
 
-  const objetoLongo = licitacao.objetoCompra.length > 180;
-  const objetoTexto = expandido || !objetoLongo ? licitacao.objetoCompra : `${licitacao.objetoCompra.slice(0, 180)}...`;
+  const formatarMoeda = (valor?: number) => {
+    if (!valor) return null;
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
+  };
+
+  const valorFormatado = formatarMoeda(item.valorTotalEstimado);
+  const tipoDoc = item.tipoDocumento === 'ata' ? 'Ata' : item.tipoDocumento === 'contrato' ? 'Contrato' : 'Edital';
+  const titulo = (item.numeroSequencial && item.ano) 
+    ? `${tipoDoc} nº ${item.numeroSequencial}/${item.ano}` 
+    : `${tipoDoc} - ${item.numeroControlePNCP}`;
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-xl p-5 transition-all flex flex-col justify-between space-y-4 shadow-sm group">
-      {/* Top Header: Badges de Modalidade & UF + Contagem Regressiva */}
-      <div className="flex items-start justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-            {licitacao.modalidadeNome}
-          </span>
-          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
-            {licitacao.uf}
-          </span>
-        </div>
-        <CountdownTimer dataEncerramento={licitacao.dataEncerramentoProposta} />
-      </div>
+    <Link href={`/dashboard/licitacao/${item.numeroControlePNCP}`} className="block">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-500/50 rounded-xl p-4.5 transition-all shadow-sm hover:shadow-md flex flex-col md:flex-row justify-between items-start md:items-center gap-4 cursor-pointer group">
+        {/* Informações em Linhas Clean (Estilo Oficial PNCP) */}
+        <div className="flex-1 space-y-2 w-full min-w-0">
+          {/* Header: Título / ID PNCP */}
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <span className="font-extrabold text-slate-900 dark:text-slate-100 font-mono tracking-tight text-sm">
+              {titulo}
+            </span>
 
-      {/* Dados do Órgão e Objeto */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-1.5 text-slate-400 text-xs font-medium">
-          <Building2 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-          <span className="truncate">{licitacao.orgaoRazaoSocial}</span>
-        </div>
+            <span className="text-slate-500 dark:text-slate-400 font-medium">
+              ID Contratação PNCP: {item.numeroControlePNCP}
+            </span>
 
-        <div className="text-slate-100 text-xs sm:text-sm font-semibold leading-relaxed">
-          <p>{objetoTexto}</p>
-          {objetoLongo && (
-            <button
-              onClick={() => setExpandido(!expandido)}
-              className="text-[11px] text-blue-400 hover:text-blue-300 font-semibold flex items-center gap-0.5 mt-1 focus:outline-none"
-            >
-              <span>{expandido ? 'Recolher' : 'Ver mais'}</span>
-              {expandido ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-            </button>
-          )}
-        </div>
+            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-900 dark:bg-slate-950 text-white dark:text-slate-200 ml-auto md:ml-2">
+              {item.uf}
+            </span>
+          </div>
 
-        <div className="flex items-center gap-1.5 text-slate-400 text-xs pt-1">
-          <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-          <span>{licitacao.municipio} - {licitacao.uf}</span>
-        </div>
-      </div>
+          {/* Linha 1: Modalidade da Contratação | Data de Atualização */}
+          <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+            <span className="font-semibold text-slate-700 dark:text-slate-300">
+              {item.modalidadeNome}
+            </span>
+            <span>•</span>
+            <div className="flex items-center gap-1">
+              <Calendar className="w-3.5 h-3.5 text-slate-400" />
+              <span>Publicado em: {formatarData(item.dataPublicacaoPncp)}</span>
+            </div>
+            {valorFormatado && (
+              <>
+                <span>•</span>
+                <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
+                  {valorFormatado}
+                </span>
+              </>
+            )}
+          </div>
 
-      {/* Matches e Termos Relevantes */}
-      <div className="flex items-center gap-1.5 flex-wrap pt-1">
-        <span className="text-[10px] text-slate-500 font-semibold uppercase flex items-center gap-1">
-          <Tag className="w-3 h-3" /> Termos:
-        </span>
-        {termosCorrespondentes.map((termo, idx) => (
-          <span
-            key={idx}
-            className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] font-medium"
-          >
-            {termo}
-          </span>
-        ))}
-      </div>
+          {/* Linha 2: Órgão Comprador | Localização (Cidade/UF) */}
+          <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300 text-xs font-semibold">
+            <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <span className="truncate">{item.orgaoRazaoSocial}</span>
+            <span className="text-slate-300 dark:text-slate-700">•</span>
+            <div className="flex items-center gap-1 text-slate-500 dark:text-slate-400 font-normal">
+              <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>{item.municipio} - {item.uf}</span>
+            </div>
+          </div>
 
-      {/* Valor Estimado & Data Limite */}
-      <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[10px] text-slate-500 font-semibold uppercase">Valor Estimado</p>
-          <p className="text-sm font-bold text-emerald-400 flex items-center gap-1">
-            <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
-            {formatarMoeda(licitacao.valorTotalEstimado)}
-          </p>
+          {/* Linha 3: Objeto da compra resumido */}
+          <div className="text-slate-800 dark:text-slate-200 text-xs line-clamp-2 leading-relaxed font-medium">
+            {item.objetoCompra}
+          </div>
         </div>
 
-        <div className="text-right">
-          <p className="text-[10px] text-slate-500 font-semibold uppercase flex items-center justify-end gap-1">
-            <Calendar className="w-3 h-3" /> Data Limite
-          </p>
-          <p className="text-xs font-semibold text-slate-300">
-            {formatarData(licitacao.dataEncerramentoProposta)}
-          </p>
+        {/* Canto Direito: APENAS a Seta Azul Clicável `>` */}
+        <div className="flex items-center justify-center shrink-0 self-end md:self-center pr-2">
+          <div className="p-2.5 rounded-xl bg-transparent group-hover:bg-blue-50 dark:group-hover:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-bold transition-all flex items-center justify-center">
+            <ChevronRight className="w-5 h-5 stroke-[3]" />
+          </div>
         </div>
       </div>
-
-      {/* Footer com Links e Ações do Funil */}
-      <div className="pt-2 border-t border-slate-800/50 flex items-center justify-between gap-2">
-        {licitacao.linkSistemaOrigem ? (
-          <a
-            href={licitacao.linkSistemaOrigem}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-xs font-semibold flex items-center gap-1.5 transition-all border border-blue-500/30"
-          >
-            <span>Ver Edital</span>
-            <ExternalLink className="w-3.5 h-3.5 text-blue-400" />
-          </a>
-        ) : (
-          <span className="text-[11px] text-slate-600 font-medium">Link indisponível</span>
-        )}
-
-        <div className="flex items-center gap-1.5">
-          {status !== 'EM_ANALISE' && (
-            <button
-              onClick={() => onAtualizarStatus(match.id, 'EM_ANALISE')}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
-              title="Mover para Em Análise"
-            >
-              <Eye className="w-3.5 h-3.5 text-amber-400" />
-            </button>
-          )}
-
-          {status !== 'SALVA' && (
-            <button
-              onClick={() => onAtualizarStatus(match.id, 'SALVA')}
-              className="p-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 transition-colors"
-              title="Salvar Oportunidade"
-            >
-              <Bookmark className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          {status !== 'DESCARTADA' && (
-            <button
-              onClick={() => onAtualizarStatus(match.id, 'DESCARTADA')}
-              className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-colors"
-              title="Descartar Edital"
-            >
-              <XCircle className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+    </Link>
   );
 }

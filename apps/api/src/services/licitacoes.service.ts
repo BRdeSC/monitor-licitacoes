@@ -2,17 +2,25 @@ import { PrismaClient, MatchStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
+// Cache em memória para municípios do IBGE por UF
+const ibgeMunicipiosCache = new Map<string, string[]>();
+
 export class LicitacoesService {
   /**
-   * Busca licitações combinadas (matches) estritamente para o tenant logado,
-   * com suporte a filtros geográficos avançados (multi-UF e municípios) e revalidação de termos.
+   * Busca licitações combinadas (matches) estritamente para o tenant logado.
+   * Regra de Negócio & Isolamento Estrito:
+   * 1. Se o Tenant ativo NÃO possuir palavras-chave ativas, expurga matches antigos do tenant e retorna 0 resultados.
+   * 2. Se houver palavras ativas, PURGA matches obsoletos cujos termos foram removidos/desativados e traz estritamente correspondências ativas.
    */
   static async listarMatches(
     tenantId: string,
     filtros: {
       status?: MatchStatus;
+      tipoDocumento?: string; // 'edital' | 'ata' | 'contrato'
       ufs?: string[];
       municipios?: string[];
+      modalidades?: string[];
+      orgaos?: string[];
       buscaTextual?: string;
       pagina?: number;
       limite?: number;
@@ -22,14 +30,61 @@ export class LicitacoesService {
     const limite = Math.max(1, Math.min(100, filtros.limite || 20));
     const skip = (pagina - 1) * limite;
 
-    // Carrega termos de exclusão ativos para revalidação estrita
+    // 1. Carrega termos de interesse ATIVOS do tenant
+    const termosAtivos = await prisma.termoInteresse.findMany({
+      where: { tenantId, ativo: true },
+      select: { termo: true },
+    });
+
+    const listaTermosAtivos = termosAtivos.map((t) => t.termo);
+
+    // Se o tenant NÃO tiver termos de interesse ativos: expurga matches antigos e retorna 0
+    if (listaTermosAtivos.length === 0) {
+      await prisma.licitacaoMatch.deleteMany({
+        where: { tenantId },
+      });
+      return {
+        total: 0,
+        pagina,
+        limite,
+        totalPaginas: 1,
+        matches: [],
+      };
+    }
+
+    // 2. Expurgo defensivo de matches obsoletos cujos termos foram deletados pelo tenant
+    const matchesTenant = await prisma.licitacaoMatch.findMany({
+      where: { tenantId },
+      select: { id: true, termosCorrespondentes: true },
+    });
+
+    const idsParaDeletar = matchesTenant
+      .filter((m) => {
+        const temAoMenosUmTermoAtivo = m.termosCorrespondentes.some((tc) =>
+          listaTermosAtivos.some((ta) => ta.toLowerCase() === tc.toLowerCase())
+        );
+        return !temAoMenosUmTermoAtivo;
+      })
+      .map((m) => m.id);
+
+    if (idsParaDeletar.length > 0) {
+      await prisma.licitacaoMatch.deleteMany({
+        where: { id: { in: idsParaDeletar } },
+      });
+    }
+
+    // 3. Carrega termos de exclusão ativos para revalidação estrita
     const termosExclusao = await prisma.termoExclusao.findMany({
       where: { tenantId, ativo: true },
       select: { termo: true },
     });
 
+    // Condição base: pertence ao tenant E possui ao menos 1 termo correspondente ativo
     const whereCondition: any = {
       tenantId,
+      termosCorrespondentes: {
+        hasSome: listaTermosAtivos,
+      },
     };
 
     if (filtros.status) {
@@ -38,32 +93,50 @@ export class LicitacoesService {
 
     const licitacaoWhere: any = {};
 
-    // 1. Filtro avançado por Múltiplas UFs
+    // Filtro por Tipo de Documento (Abas: Edital, Ata, Contrato)
+    if (filtros.tipoDocumento) {
+      licitacaoWhere.tipoDocumento = filtros.tipoDocumento;
+    }
+
+    // Filtro por Múltiplas UFs
     if (filtros.ufs && filtros.ufs.length > 0) {
       licitacaoWhere.uf = {
         in: filtros.ufs.map((u) => u.trim().toUpperCase()),
       };
     }
 
-    // 2. Filtro avançado por Múltiplos Municípios
+    // Filtro por Múltiplos Municípios
     if (filtros.municipios && filtros.municipios.length > 0) {
       licitacaoWhere.municipio = {
         in: filtros.municipios.map((m) => m.trim()),
-        mode: 'insensitive',
       };
     }
 
-    // 3. Busca textual por Objeto, Órgão ou Município
+    // Filtro por Modalidades
+    if (filtros.modalidades && filtros.modalidades.length > 0) {
+      licitacaoWhere.modalidadeNome = {
+        in: filtros.modalidades.map((m) => m.trim()),
+      };
+    }
+
+    // Filtro por Órgãos
+    if (filtros.orgaos && filtros.orgaos.length > 0) {
+      licitacaoWhere.orgaoRazaoSocial = {
+        in: filtros.orgaos.map((o) => o.trim()),
+      };
+    }
+
+    // Busca textual por Objeto, Órgão ou Município
     if (filtros.buscaTextual && filtros.buscaTextual.trim() !== '') {
       const termoBusca = filtros.buscaTextual.trim();
       licitacaoWhere.OR = [
-        { objetoCompra: { contains: termoBusca, mode: 'insensitive' } },
-        { orgaoRazaoSocial: { contains: termoBusca, mode: 'insensitive' } },
-        { municipio: { contains: termoBusca, mode: 'insensitive' } },
+        { objetoCompra: { contains: termoBusca } },
+        { orgaoRazaoSocial: { contains: termoBusca } },
+        { municipio: { contains: termoBusca } },
       ];
     }
 
-    // 4. Revalidação contra termos de exclusão ativos do tenant
+    // Revalidação contra termos de exclusão ativos do tenant
     if (termosExclusao.length > 0) {
       const AND = licitacaoWhere.AND || [];
       termosExclusao.forEach((exclusao) => {
@@ -71,7 +144,6 @@ export class LicitacoesService {
           objetoCompra: {
             not: {
               contains: exclusao.termo,
-              mode: 'insensitive',
             },
           },
         });
@@ -106,37 +178,84 @@ export class LicitacoesService {
   }
 
   /**
-   * Obtém a lista distinta de municípios disponíveis no banco de dados para filtro dinâmico
+   * Obtém a lista distinta de órgãos disponíveis no banco de dados para filtro dinâmico
+   */
+  static async obterOrgaos() {
+    const resultados = await prisma.licitacao.findMany({
+      select: {
+        orgaoRazaoSocial: true,
+      },
+      distinct: ['orgaoRazaoSocial'],
+      orderBy: { orgaoRazaoSocial: 'asc' },
+      take: 100,
+    });
+
+    const orgaos = resultados
+      .map((r) => r.orgaoRazaoSocial)
+      .filter((o): o is string => Boolean(o && o.trim() !== ''));
+
+    return { orgaos };
+  }
+
+  /**
+   * Obtém a lista COMPLETA de municípios do IBGE para a UF selecionada (com suporte a Cachoeira Paulista, Cruzeiro, etc.)
    */
   static async obterMunicipiosPorUf(uf?: string) {
-    const where: any = {};
-    if (uf && uf.trim() !== '') {
-      where.uf = uf.trim().toUpperCase();
+    if (!uf || uf.trim() === '') {
+      const resultados = await prisma.licitacao.findMany({
+        select: { municipio: true },
+        distinct: ['municipio'],
+        take: 200,
+      });
+      const municipios = Array.from(
+        new Set(resultados.map((r) => r.municipio).filter((m): m is string => Boolean(m && m.trim() !== '')))
+      ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+      return { municipios };
     }
 
+    const ufUpper = uf.trim().toUpperCase();
+
+    // Cache em memória
+    if (ibgeMunicipiosCache.has(ufUpper)) {
+      return { municipios: ibgeMunicipiosCache.get(ufUpper)! };
+    }
+
+    try {
+      // Consulta API oficial do IBGE para a UF
+      const response = await fetch(`https://servicodados.ibge.gov.br/api/v1/localidades/estados/${ufUpper}/municipios`, {
+        headers: { 'Accept': 'application/json' },
+      });
+
+      if (response.ok) {
+        const json: any = await response.json();
+        if (Array.isArray(json) && json.length > 0) {
+          const municipiosIbge = json.map((item: any) => String(item.nome)).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+          ibgeMunicipiosCache.set(ufUpper, municipiosIbge);
+          console.log(`📍 [IBGE API] Carregados ${municipiosIbge.length} municípios completos para UF ${ufUpper}`);
+          return { municipios: municipiosIbge };
+        }
+      }
+    } catch (err: any) {
+      console.warn(`⚠️ [IBGE API] Falha ao buscar municípios de ${ufUpper}: ${err.message}`);
+    }
+
+    // Fallback no banco local
     const resultados = await prisma.licitacao.findMany({
-      where,
-      select: {
-        municipio: true,
-        uf: true,
-      },
-      distinct: ['municipio', 'uf'],
+      where: { uf: ufUpper },
+      select: { municipio: true },
+      distinct: ['municipio'],
       orderBy: { municipio: 'asc' },
     });
 
     const municipios = Array.from(
-      new Set(
-        resultados
-          .map((r) => r.municipio)
-          .filter((m): m is string => Boolean(m && m.trim() !== '' && m !== 'Município Não Informado'))
-      )
+      new Set(resultados.map((r) => r.municipio).filter((m): m is string => Boolean(m && m.trim() !== '')))
     ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
     return { municipios };
   }
 
   /**
-   * Atualiza o status do edital no funil do tenant (NOVA -> EM_ANALISE -> SALVA / DESCARTADA)
+   * Atualiza o status do edital no funil do tenant
    */
   static async atualizarStatusMatch(
     tenantId: string,
@@ -165,13 +284,12 @@ export class LicitacoesService {
   }
 
   /**
-   * Estatísticas resumidas do funil do tenant
+   * Estatísticas resumidas do funil do tenant.
    */
   static async obterMetricasFunil(tenantId: string) {
-    const contadores = await prisma.licitacaoMatch.groupBy({
-      by: ['status'],
-      where: { tenantId },
-      _count: { _all: true },
+    const termosAtivos = await prisma.termoInteresse.findMany({
+      where: { tenantId, ativo: true },
+      select: { termo: true },
     });
 
     const resultado: Record<MatchStatus | 'TOTAL', number> = {
@@ -181,6 +299,26 @@ export class LicitacoesService {
       DESCARTADA: 0,
       TOTAL: 0,
     };
+
+    if (termosAtivos.length === 0) {
+      await prisma.licitacaoMatch.deleteMany({
+        where: { tenantId },
+      });
+      return resultado;
+    }
+
+    const listaTermosAtivos = termosAtivos.map((t) => t.termo);
+
+    const contadores = await prisma.licitacaoMatch.groupBy({
+      by: ['status'],
+      where: {
+        tenantId,
+        termosCorrespondentes: {
+          hasSome: listaTermosAtivos,
+        },
+      },
+      _count: { _all: true },
+    });
 
     contadores.forEach((item: { status: MatchStatus; _count: { _all: number } }) => {
       resultado[item.status] = item._count._all;

@@ -5,16 +5,17 @@ export class PNCPProvider implements ILicitacaoProvider {
 
   /**
    * Consome o endpoint de alta performance /api/search/ do PNCP
-   * Suporta busca por termos de interesse, status ('recebendo_proposta' | 'encerradas') e filtro opcional de UF.
+   * Suporta busca por termos de interesse, status, filtro opcional de UF e tipos de documento (edital, ata, contrato).
    */
   async buscarEditais(
     termo: string,
     uf?: string,
-    status: string = 'recebendo_proposta'
+    status: string = 'recebendo_proposta',
+    tipoDocumento: string = 'edital'
   ): Promise<LicitacaoDTO[]> {
     const todosItens: LicitacaoDTO[] = [];
     const tamPagina = 50;
-    const maxPaginas = 3; // Busca até 150 editais por termo/status
+    const maxPaginas = 3;
 
     const baseUrl = 'https://pncp.gov.br/api/search/';
 
@@ -22,7 +23,7 @@ export class PNCPProvider implements ILicitacaoProvider {
       try {
         const params = new URLSearchParams({
           q: termo,
-          tipos_documento: 'edital',
+          tipos_documento: tipoDocumento,
           status: status,
           pagina: String(pagina),
           tam_pagina: String(tamPagina),
@@ -34,7 +35,7 @@ export class PNCPProvider implements ILicitacaoProvider {
 
         const url = `${baseUrl}?${params.toString()}`;
 
-        console.log(`🤖 [PNCP Search] Buscando: q="${termo}" | status="${status}" | uf="${uf || 'TODAS'}" | pag=${pagina}...`);
+        console.log(`🤖 [PNCP Search] Buscando: q="${termo}" | doc="${tipoDocumento}" | status="${status}" | uf="${uf || 'TODAS'}" | pag=${pagina}...`);
 
         const response = await fetch(url, {
           method: 'GET',
@@ -85,6 +86,7 @@ export class PNCPProvider implements ILicitacaoProvider {
               municipioNome: item.municipio_nome || item.municipio || 'Município Não Informado',
             },
             modalidadeNome: item.modalidade_licitacao_nome || item.tipo_nome || 'Pregão - Eletrônico',
+            tipoDocumento: tipoDocumento || item.document_type || 'edital',
             objetoCompra: item.description || item.title || 'Objeto não informado',
             valorTotalEstimado: item.valor_global ? Number(item.valor_global) : undefined,
             dataPublicacaoPncp: item.data_publicacao_pncp || item.createdAt || new Date().toISOString(),
@@ -105,7 +107,7 @@ export class PNCPProvider implements ILicitacaoProvider {
       }
     }
 
-    console.log(`✅ [PNCP Search] Termo "${termo}": Coletados ${todosItens.length} editais.`);
+    console.log(`✅ [PNCP Search] Termo "${termo}" [${tipoDocumento}]: Coletados ${todosItens.length} itens.`);
     return todosItens;
   }
 }

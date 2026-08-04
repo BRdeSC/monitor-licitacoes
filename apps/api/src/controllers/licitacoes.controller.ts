@@ -6,7 +6,7 @@ export class LicitacoesController {
   static async listarMatches(req: Request, res: Response) {
     try {
       const tenantId = req.tenantId!;
-      const { status, uf, ufs, municipios, busca, pagina, limite } = req.query;
+      const { status, tipoDocumento, uf, ufs, municipios, modalidades, orgaos, busca, pagina, limite } = req.query;
 
       let parsedUfs: string[] | undefined = undefined;
       if (ufs) {
@@ -20,10 +20,23 @@ export class LicitacoesController {
         parsedMunicipios = String(municipios).split(',').map((s) => s.trim()).filter(Boolean);
       }
 
+      let parsedModalidades: string[] | undefined = undefined;
+      if (modalidades) {
+        parsedModalidades = String(modalidades).split(',').map((s) => s.trim()).filter(Boolean);
+      }
+
+      let parsedOrgaos: string[] | undefined = undefined;
+      if (orgaos) {
+        parsedOrgaos = String(orgaos).split(',').map((s) => s.trim()).filter(Boolean);
+      }
+
       const resultado = await LicitacoesService.listarMatches(tenantId, {
         status: status as MatchStatus,
+        tipoDocumento: tipoDocumento ? String(tipoDocumento) : undefined,
         ufs: parsedUfs,
         municipios: parsedMunicipios,
+        modalidades: parsedModalidades,
+        orgaos: parsedOrgaos,
         buscaTextual: busca ? String(busca) : undefined,
         pagina: pagina ? parseInt(String(pagina), 10) : 1,
         limite: limite ? parseInt(String(limite), 10) : 12,
@@ -39,6 +52,15 @@ export class LicitacoesController {
     try {
       const { uf } = req.query;
       const resultado = await LicitacoesService.obterMunicipiosPorUf(uf ? String(uf) : undefined);
+      return res.json(resultado);
+    } catch (error: any) {
+      return res.status(500).json({ erro: error.message });
+    }
+  }
+
+  static async obterOrgaos(req: Request, res: Response) {
+    try {
+      const resultado = await LicitacoesService.obterOrgaos();
       return res.json(resultado);
     } catch (error: any) {
       return res.status(500).json({ erro: error.message });
